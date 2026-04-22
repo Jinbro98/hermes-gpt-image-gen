@@ -1,5 +1,7 @@
 # hermes-gpt-image-gen
 
+[한국어](README.ko.md)
+
 Codex CLI-powered image generation plugin for **Hermes Agent**.
 
 This plugin adds a new Hermes tool, `codex_image_generate`, which runs Codex CLI `$imagegen`, saves the output as a **local image file**, and returns the absolute path so Hermes can send it directly in Telegram with `MEDIA:/absolute/path`.
@@ -147,6 +149,7 @@ This repository intentionally keeps only the minimal distribution files:
 plugin.yaml
 __init__.py
 README.md
+README.ko.md
 install.sh
 LICENSE
 ```
