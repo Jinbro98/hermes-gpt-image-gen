@@ -88,16 +88,38 @@ codex login
 curl -fsSL https://raw.githubusercontent.com/Jinbro98/hermes-gpt-image-gen/main/install.sh | bash
 ```
 
+By default, the installer now deploys the plugin to:
+
+- the default Hermes home plugin directory (`~/.hermes/plugins/codex_image_gen`)
+- every existing profile under `~/.hermes/profiles/*/plugins/codex_image_gen`
+
+So a single install command covers your current profile and other existing Hermes profiles as well.
+
+If you want to install into only one custom location, set `HERMES_GPT_IMAGE_GEN_DIR` first:
+
+```bash
+HERMES_GPT_IMAGE_GEN_DIR="$HERMES_HOME/plugins/codex_image_gen" \
+  curl -fsSL https://raw.githubusercontent.com/Jinbro98/hermes-gpt-image-gen/main/install.sh | bash
+```
+
 After installation, restart Hermes or start a fresh session so the plugin is loaded.
 
 ---
 
 ## Manual install
 
+### Install for all existing Hermes profiles
+
 ```bash
-mkdir -p ~/.hermes/plugins/codex_image_gen
-curl -fsSL https://raw.githubusercontent.com/Jinbro98/hermes-gpt-image-gen/main/plugin.yaml -o ~/.hermes/plugins/codex_image_gen/plugin.yaml
-curl -fsSL https://raw.githubusercontent.com/Jinbro98/hermes-gpt-image-gen/main/__init__.py -o ~/.hermes/plugins/codex_image_gen/__init__.py
+curl -fsSL https://raw.githubusercontent.com/Jinbro98/hermes-gpt-image-gen/main/install.sh | bash
+```
+
+### Install into a single current profile only
+
+```bash
+mkdir -p "$HERMES_HOME/plugins/codex_image_gen"
+curl -fsSL https://raw.githubusercontent.com/Jinbro98/hermes-gpt-image-gen/main/plugin.yaml -o "$HERMES_HOME/plugins/codex_image_gen/plugin.yaml"
+curl -fsSL https://raw.githubusercontent.com/Jinbro98/hermes-gpt-image-gen/main/__init__.py -o "$HERMES_HOME/plugins/codex_image_gen/__init__.py"
 ```
 
 Then restart Hermes or reset the session.

@@ -86,16 +86,38 @@ codex login
 curl -fsSL https://raw.githubusercontent.com/Jinbro98/hermes-gpt-image-gen/main/install.sh | bash
 ```
 
+이제 설치 스크립트는 기본적으로 아래 위치에 모두 배포합니다.
+
+- 기본 Hermes 홈 플러그인 디렉터리 (`~/.hermes/plugins/codex_image_gen`)
+- `~/.hermes/profiles/*/plugins/codex_image_gen` 아래의 모든 기존 프로필
+
+즉, 한 번 설치하면 현재 프로필과 다른 기존 Hermes 프로필에도 함께 반영됩니다.
+
+하나의 커스텀 위치에만 설치하고 싶다면 먼저 `HERMES_GPT_IMAGE_GEN_DIR`을 지정하세요.
+
+```bash
+HERMES_GPT_IMAGE_GEN_DIR="$HERMES_HOME/plugins/codex_image_gen" \
+  curl -fsSL https://raw.githubusercontent.com/Jinbro98/hermes-gpt-image-gen/main/install.sh | bash
+```
+
 설치 후에는 Hermes를 재시작하거나 새 세션을 시작해야 플러그인이 로드됩니다.
 
 ---
 
 ## 수동 설치
 
+### 모든 기존 Hermes 프로필에 설치
+
 ```bash
-mkdir -p ~/.hermes/plugins/codex_image_gen
-curl -fsSL https://raw.githubusercontent.com/Jinbro98/hermes-gpt-image-gen/main/plugin.yaml -o ~/.hermes/plugins/codex_image_gen/plugin.yaml
-curl -fsSL https://raw.githubusercontent.com/Jinbro98/hermes-gpt-image-gen/main/__init__.py -o ~/.hermes/plugins/codex_image_gen/__init__.py
+curl -fsSL https://raw.githubusercontent.com/Jinbro98/hermes-gpt-image-gen/main/install.sh | bash
+```
+
+### 현재 프로필 하나에만 설치
+
+```bash
+mkdir -p "$HERMES_HOME/plugins/codex_image_gen"
+curl -fsSL https://raw.githubusercontent.com/Jinbro98/hermes-gpt-image-gen/main/plugin.yaml -o "$HERMES_HOME/plugins/codex_image_gen/plugin.yaml"
+curl -fsSL https://raw.githubusercontent.com/Jinbro98/hermes-gpt-image-gen/main/__init__.py -o "$HERMES_HOME/plugins/codex_image_gen/__init__.py"
 ```
 
 그 다음 Hermes를 재시작하거나 세션을 리셋하세요.
