@@ -1,6 +1,6 @@
 # hermes-gpt-image-gen
 
-[한국어](README.ko.md)
+<p align="center"><a href="README.ko.md">한국어</a></p>
 
 [![Release](https://img.shields.io/github/v/release/Jinbro98/hermes-gpt-image-gen?display_name=tag)](https://github.com/Jinbro98/hermes-gpt-image-gen/releases)
 [![License](https://img.shields.io/github/license/Jinbro98/hermes-gpt-image-gen)](LICENSE)
