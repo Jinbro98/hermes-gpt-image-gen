@@ -40,6 +40,12 @@
 - `auto`, `transparent`, `opaque` 배경 옵션 지원
 - 선택 사항: Hermes 기본 `image_generate`를 Codex 기반 구현으로 교체 가능
 - Codex/GPT 계열 이미지 생성 요청에 대한 트리거 기반 라우팅 지원
+- 핫패스에서 `codex features list`를 반복 호출하지 않도록 Codex 기능 확인 결과 캐시
+- 작업 디렉터리에서 **새로 생기거나 변경된** 이미지 파일만 추적하여 결과 파일을 더 안전하게 판별
+- 안전한 경우 단일 대체 이미지 파일을 요청한 파일명으로 자동 변경
+- 사후 분석을 위해 `stdout`, `stderr`, `result.txt` 디버그 아티팩트를 디스크에 저장
+- 오래된 자동 생성 임시 작업 디렉터리를 주기 제한(throttled interval) 하에 정리
+- 캐시, 출력 판별, 디버그 아티팩트, 임시 디렉터리 정리를 검증하는 pytest 테스트 포함
 
 ---
 
@@ -118,6 +124,9 @@ curl -fsSL https://raw.githubusercontent.com/Jinbro98/hermes-gpt-image-gen/main/
 - `image_path`
 - `file_name`
 - `output_dir`
+- `stdout_path`
+- `stderr_path`
+- `result_path`
 
 Telegram 전송 예시:
 
@@ -156,14 +165,70 @@ export HERMES_CODEX_IMAGEGEN_OVERRIDE=1
 
 ---
 
+## 선택적 환경 변수
+
+아래 환경 변수는 필수는 아니지만, 안정성 동작을 조정할 때 유용합니다.
+
+```bash
+# override 모드 활성화
+export HERMES_CODEX_IMAGEGEN_OVERRIDE=1
+
+# Codex 기능 확인 결과를 5분간 캐시 (기본값: 300)
+export HERMES_CODEX_IMAGEGEN_REQUIREMENTS_TTL=300
+
+# 24시간보다 오래된 자동 생성 임시 작업 디렉터리 삭제 (기본값: 86400)
+export HERMES_CODEX_IMAGEGEN_TEMP_DIR_MAX_AGE=86400
+
+# 오래된 임시 디렉터리 정리를 최대 1시간에 1번만 수행 (기본값: 3600)
+export HERMES_CODEX_IMAGEGEN_CLEANUP_INTERVAL=3600
+```
+
+---
+
+## 안정성 관련 변경 사항
+
+### 더 안전한 출력 파일 판별
+
+이제 플러그인은 Codex를 실행하기 전에 기존 이미지 파일 상태를 스냅샷으로 기록하고, 실행 후에는 **새로 생기거나 변경된** 이미지 파일만 결과 후보로 인정합니다. 따라서 재사용 중인 `output_dir` 안의 오래된 파일이 최신 생성 결과로 잘못 선택되는 문제를 줄였습니다.
+
+Codex가 요청한 파일명을 무시했더라도 새 이미지 파일이 정확히 1개만 생기고 확장자가 호환되면, 그 파일을 요청한 파일명으로 변경합니다. 반대로 기대한 파일명 없이 새 이미지가 여러 개 생기면, 가장 최근 파일을 임의 선택하지 않고 명시적인 모호성 오류를 반환합니다.
+
+### 디버그 아티팩트
+
+이제 모든 Codex 실행은 출력 디렉터리에 아래 파일을 남깁니다.
+
+- `codex.stdout.log`
+- `codex.stderr.log`
+- `result.txt`
+
+이 파일들의 절대 경로는 도구 결과의 `stdout_path`, `stderr_path`, `result_path`로 함께 반환됩니다.
+
+### 임시 작업 디렉터리 정리
+
+`output_dir`을 지정하지 않으면 여전히 매 실행마다 새 임시 디렉터리를 만들지만, 오래된 임시 작업 디렉터리가 무한정 쌓이지 않도록 주기 제한 하에 정리도 함께 수행합니다.
+
+---
+
+## 테스트
+
+테스트 실행 명령:
+
+```bash
+pytest tests/test_plugin.py -q
+```
+
+---
+
 ## 저장소 구성
 
-이 저장소는 배포에 필요한 최소 파일만 포함합니다.
+이 저장소는 배포에 필요한 최소 파일과 테스트만 포함합니다.
 
 ```text
 assets/
   install-demo.gif
   install-screenshot.png
+tests/
+  test_plugin.py
 plugin.yaml
 __init__.py
 README.md

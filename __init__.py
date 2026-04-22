@@ -5,6 +5,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+import time
 from pathlib import Path
 from typing import Optional
 
@@ -19,6 +20,34 @@ TRIGGER_ACTION_TERMS = ("생성", "만들", "그려", "제작", "렌더")
 DEFAULT_TIMEOUT_SECONDS = 600
 MAX_LOG_TEXT_CHARS = 1200
 OVERRIDE_ENV_VAR = "HERMES_CODEX_IMAGEGEN_OVERRIDE"
+TEMP_DIR_PREFIX = "hermes-codex-imagegen-"
+REQUIREMENTS_CACHE_TTL_SECONDS = int(os.getenv("HERMES_CODEX_IMAGEGEN_REQUIREMENTS_TTL", "300"))
+TEMP_DIR_MAX_AGE_SECONDS = int(os.getenv("HERMES_CODEX_IMAGEGEN_TEMP_DIR_MAX_AGE", "86400"))
+TEMP_DIR_CLEANUP_INTERVAL_SECONDS = int(
+    os.getenv("HERMES_CODEX_IMAGEGEN_CLEANUP_INTERVAL", "3600")
+)
+
+_CODEX_REQUIREMENTS_CACHE = {
+    "checked_at": 0.0,
+    "ok": None,
+    "error": None,
+    "codex_bin": None,
+}
+_LAST_TEMP_DIR_CLEANUP_AT = 0.0
+
+
+class CodexImageGenerationError(RuntimeError):
+    def __init__(
+        self,
+        code: str,
+        message: str,
+        *,
+        debug_paths: Optional[dict[str, str]] = None,
+    ) -> None:
+        super().__init__(message)
+        self.code = code
+        self.debug_paths = debug_paths or {}
+
 
 CODEX_IMAGE_GENERATE_SCHEMA = {
     "name": "codex_image_generate",
@@ -121,19 +150,73 @@ def _build_codex_prompt(prompt: str, aspect_ratio: str, file_name: str, backgrou
 
 
 
-def _find_generated_file(workdir: Path, expected_name: str) -> Optional[Path]:
-    expected_path = workdir / expected_name
-    if expected_path.exists():
-        return expected_path
-
-    candidates = [
+def _collect_image_files(workdir: Path) -> list[Path]:
+    return [
         path
         for path in workdir.iterdir()
         if path.is_file() and path.suffix.lower() in IMAGE_EXTENSIONS
     ]
+
+
+
+def _snapshot_image_files(workdir: Path) -> dict[str, tuple[int, int]]:
+    snapshot: dict[str, tuple[int, int]] = {}
+    for path in _collect_image_files(workdir):
+        stat = path.stat()
+        snapshot[path.name] = (stat.st_mtime_ns, stat.st_size)
+    return snapshot
+
+
+
+def _is_new_or_changed(path: Path, snapshot: dict[str, tuple[int, int]]) -> bool:
+    stat = path.stat()
+    return snapshot.get(path.name) != (stat.st_mtime_ns, stat.st_size)
+
+
+
+def _write_debug_artifacts(workdir: Path, stdout_text: str, stderr_text: str) -> dict[str, str]:
+    stdout_path = workdir / "codex.stdout.log"
+    stderr_path = workdir / "codex.stderr.log"
+    stdout_path.write_text(stdout_text or "", encoding="utf-8")
+    stderr_path.write_text(stderr_text or "", encoding="utf-8")
+    return {
+        "stdout_path": str(stdout_path.resolve()),
+        "stderr_path": str(stderr_path.resolve()),
+        "result_path": str((workdir / "result.txt").resolve()),
+    }
+
+
+
+def _resolve_generated_file(
+    workdir: Path,
+    expected_name: str,
+    snapshot: dict[str, tuple[int, int]],
+) -> Path:
+    expected_path = workdir / expected_name
+    if expected_path.exists() and _is_new_or_changed(expected_path, snapshot):
+        return expected_path
+
+    candidates = [path for path in _collect_image_files(workdir) if _is_new_or_changed(path, snapshot)]
     if not candidates:
-        return None
-    return max(candidates, key=lambda path: (path.stat().st_mtime, path.name))
+        raise CodexImageGenerationError(
+            "IMAGE_NOT_PRODUCED",
+            f"Codex CLI finished without leaving a new image file in {workdir}",
+        )
+    if len(candidates) > 1:
+        candidate_names = ", ".join(sorted(path.name for path in candidates))
+        raise CodexImageGenerationError(
+            "AMBIGUOUS_OUTPUT_IMAGE",
+            (
+                "Codex CLI produced multiple new image files without the expected filename: "
+                f"{candidate_names}"
+            ),
+        )
+
+    candidate = candidates[0]
+    if candidate.name != expected_name and candidate.suffix.lower() == expected_path.suffix.lower():
+        candidate.replace(expected_path)
+        return expected_path
+    return candidate
 
 
 
@@ -171,10 +254,26 @@ def _build_routing_context(user_message: str | None):
 
 
 
-def _ensure_codex_available() -> None:
+def _ensure_codex_available(force_refresh: bool = False) -> str:
+    now = time.monotonic()
+    cached_ok = _CODEX_REQUIREMENTS_CACHE["ok"]
+    checked_at = _CODEX_REQUIREMENTS_CACHE["checked_at"]
+    if (
+        not force_refresh
+        and cached_ok is not None
+        and now - checked_at < REQUIREMENTS_CACHE_TTL_SECONDS
+    ):
+        if cached_ok:
+            return str(_CODEX_REQUIREMENTS_CACHE["codex_bin"])
+        raise RuntimeError(str(_CODEX_REQUIREMENTS_CACHE["error"]))
+
     codex_bin = shutil.which("codex")
     if not codex_bin:
-        raise RuntimeError("Codex CLI not found in PATH.")
+        error = "Codex CLI not found in PATH."
+        _CODEX_REQUIREMENTS_CACHE.update(
+            {"checked_at": now, "ok": False, "error": error, "codex_bin": None}
+        )
+        raise RuntimeError(error)
 
     result = subprocess.run(
         [codex_bin, "features", "list"],
@@ -185,7 +284,11 @@ def _ensure_codex_available() -> None:
     )
     if result.returncode != 0:
         stderr = (result.stderr or result.stdout or "").strip()
-        raise RuntimeError(f"Failed to query Codex CLI features: {stderr or 'unknown error'}")
+        error = f"Failed to query Codex CLI features: {stderr or 'unknown error'}"
+        _CODEX_REQUIREMENTS_CACHE.update(
+            {"checked_at": now, "ok": False, "error": error, "codex_bin": codex_bin}
+        )
+        raise RuntimeError(error)
 
     feature_line = None
     for line in result.stdout.splitlines():
@@ -194,9 +297,54 @@ def _ensure_codex_available() -> None:
             break
 
     if not feature_line or "true" not in feature_line.lower():
-        raise RuntimeError(
-            "Codex CLI image_generation feature is unavailable. Upgrade Codex CLI and re-check auth."
+        error = "Codex CLI image_generation feature is unavailable. Upgrade Codex CLI and re-check auth."
+        _CODEX_REQUIREMENTS_CACHE.update(
+            {"checked_at": now, "ok": False, "error": error, "codex_bin": codex_bin}
         )
+        raise RuntimeError(error)
+
+    _CODEX_REQUIREMENTS_CACHE.update(
+        {"checked_at": now, "ok": True, "error": None, "codex_bin": codex_bin}
+    )
+    return codex_bin
+
+
+
+def _cleanup_stale_temp_dirs(
+    *,
+    base_dir: Optional[Path | str] = None,
+    max_age_seconds: int = TEMP_DIR_MAX_AGE_SECONDS,
+    now: Optional[float] = None,
+    force: bool = False,
+) -> int:
+    global _LAST_TEMP_DIR_CLEANUP_AT
+
+    current_time = time.time() if now is None else now
+    if (
+        not force
+        and _LAST_TEMP_DIR_CLEANUP_AT
+        and current_time - _LAST_TEMP_DIR_CLEANUP_AT < TEMP_DIR_CLEANUP_INTERVAL_SECONDS
+    ):
+        return 0
+
+    _LAST_TEMP_DIR_CLEANUP_AT = current_time
+    root = Path(base_dir) if base_dir is not None else Path(tempfile.gettempdir())
+    if not root.exists():
+        return 0
+
+    removed = 0
+    for path in root.iterdir():
+        if not path.is_dir() or not path.name.startswith(TEMP_DIR_PREFIX):
+            continue
+        try:
+            age_seconds = current_time - path.stat().st_mtime
+        except OSError:
+            continue
+        if age_seconds <= max_age_seconds:
+            continue
+        shutil.rmtree(path, ignore_errors=True)
+        removed += 1
+    return removed
 
 
 
@@ -206,6 +354,18 @@ def check_codex_imagegen_requirements() -> bool:
         return True
     except Exception:
         return False
+
+
+
+def _format_codex_error(exc: Exception) -> str:
+    if not isinstance(exc, CodexImageGenerationError):
+        return str(exc)
+
+    message = f"[{exc.code}] {exc}"
+    if exc.debug_paths:
+        debug_pairs = ", ".join(f"{key}={value}" for key, value in sorted(exc.debug_paths.items()))
+        message = f"{message} | debug: {debug_pairs}"
+    return message
 
 
 
@@ -227,15 +387,17 @@ def run_codex_image_generation(
     if timeout_seconds <= 0:
         raise ValueError("timeout_seconds must be positive")
 
-    _ensure_codex_available()
+    codex_bin = _ensure_codex_available()
 
     safe_file_name = _safe_file_name(file_name)
     if output_dir:
         workdir = Path(output_dir).expanduser()
         workdir.mkdir(parents=True, exist_ok=True)
     else:
-        workdir = Path(tempfile.mkdtemp(prefix="hermes-codex-imagegen-"))
+        _cleanup_stale_temp_dirs()
+        workdir = Path(tempfile.mkdtemp(prefix=TEMP_DIR_PREFIX))
 
+    image_snapshot = _snapshot_image_files(workdir)
     codex_prompt = _build_codex_prompt(
         prompt=prompt,
         aspect_ratio=aspect_ratio,
@@ -244,7 +406,7 @@ def run_codex_image_generation(
     )
 
     cmd = [
-        shutil.which("codex") or "codex",
+        codex_bin,
         "exec",
         "--skip-git-repo-check",
         "--ephemeral",
@@ -252,34 +414,52 @@ def run_codex_image_generation(
         "result.txt",
         codex_prompt,
     ]
-    result = subprocess.run(
-        cmd,
-        cwd=str(workdir),
-        capture_output=True,
-        text=True,
-        timeout=timeout_seconds,
-        check=False,
-    )
+
+    try:
+        result = subprocess.run(
+            cmd,
+            cwd=str(workdir),
+            capture_output=True,
+            text=True,
+            timeout=timeout_seconds,
+            check=False,
+        )
+    except subprocess.TimeoutExpired as exc:
+        debug_paths = _write_debug_artifacts(workdir, exc.stdout or "", exc.stderr or "")
+        raise CodexImageGenerationError(
+            "CODEX_TIMEOUT",
+            f"Codex image generation timed out after {timeout_seconds} seconds.",
+            debug_paths=debug_paths,
+        ) from exc
+
+    debug_paths = _write_debug_artifacts(workdir, result.stdout or "", result.stderr or "")
     if result.returncode != 0:
         stderr = (result.stderr or "").strip()
         stdout = (result.stdout or "").strip()
         detail = stderr or stdout or "Codex CLI exited with a non-zero status"
-        raise RuntimeError(f"Codex image generation failed: {detail}")
-
-    image_path = _find_generated_file(workdir, safe_file_name)
-    if image_path is None:
-        raise FileNotFoundError(
-            f"Codex CLI finished without leaving an image file in {workdir}"
+        raise CodexImageGenerationError(
+            "CODEX_EXEC_FAILED",
+            f"Codex image generation failed: {detail}",
+            debug_paths=debug_paths,
         )
+
+    try:
+        image_path = _resolve_generated_file(workdir, safe_file_name, image_snapshot)
+    except CodexImageGenerationError as exc:
+        exc.debug_paths = {**debug_paths, **exc.debug_paths}
+        raise
 
     return {
         "success": True,
-        "image_path": str(image_path),
+        "image_path": str(image_path.resolve()),
         "file_name": image_path.name,
-        "output_dir": str(workdir),
+        "output_dir": str(workdir.resolve()),
         "stdout": _truncate_log_text(result.stdout or ""),
         "stderr": _truncate_log_text(result.stderr or ""),
-        "assistant_hint": f"Send this image in Telegram with MEDIA:{image_path}",
+        "stdout_path": debug_paths["stdout_path"],
+        "stderr_path": debug_paths["stderr_path"],
+        "result_path": debug_paths["result_path"],
+        "assistant_hint": f"Send this image in Telegram with MEDIA:{image_path.resolve()}",
     }
 
 
@@ -297,7 +477,7 @@ def _handle_codex_image_generate(args, **_kwargs) -> str:
             )
         )
     except Exception as exc:
-        return tool_error(str(exc), success=False)
+        return tool_error(_format_codex_error(exc), success=False)
 
 
 

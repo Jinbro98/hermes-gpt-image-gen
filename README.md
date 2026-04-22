@@ -42,6 +42,12 @@ prefer the Codex-backed image workflow.
 - Supports `auto`, `transparent`, `opaque` background preference
 - Optional override mode: replace built-in Hermes `image_generate` with the Codex-backed implementation
 - Trigger-based routing for explicit Codex/GPT image generation requests
+- Caches Codex capability checks to avoid repeated `codex features list` calls on hot paths
+- Resolves output files more safely by tracking only **new or changed** generated images in the workdir
+- Renames a single fallback image to the requested filename when it is safe to do so
+- Writes `stdout`, `stderr`, and `result.txt` debug artifacts to disk for post-mortem debugging
+- Cleans up stale auto-created temp workdirs on a throttled interval
+- Includes pytest coverage for caching, output resolution, debug artifacts, and temp-dir cleanup
 
 ---
 
@@ -120,6 +126,9 @@ Successful output includes:
 - `image_path`
 - `file_name`
 - `output_dir`
+- `stdout_path`
+- `stderr_path`
+- `result_path`
 
 Example Telegram delivery:
 
@@ -158,14 +167,70 @@ With that environment variable enabled, the plugin deregisters the existing `ima
 
 ---
 
+## Optional environment variables
+
+These environment variables are optional, but useful when you want to tune reliability behavior:
+
+```bash
+# Enable override mode
+export HERMES_CODEX_IMAGEGEN_OVERRIDE=1
+
+# Cache Codex capability checks for 5 minutes (default: 300)
+export HERMES_CODEX_IMAGEGEN_REQUIREMENTS_TTL=300
+
+# Delete auto-created temp workdirs older than 24 hours (default: 86400)
+export HERMES_CODEX_IMAGEGEN_TEMP_DIR_MAX_AGE=86400
+
+# Run stale temp-dir cleanup at most once per hour (default: 3600)
+export HERMES_CODEX_IMAGEGEN_CLEANUP_INTERVAL=3600
+```
+
+---
+
+## Reliability notes
+
+### Safer output resolution
+
+The plugin now snapshots existing image files before invoking Codex and only accepts **new or changed** image outputs after the run. This prevents stale files in a reused output directory from being mistaken for the latest generation.
+
+If Codex creates exactly one new image file but ignores the requested filename, the plugin renames that file to the requested filename when the extension is compatible. If Codex leaves behind multiple new image files without the expected filename, the run fails with an explicit ambiguity error instead of silently picking the newest file.
+
+### Debug artifacts
+
+Every Codex run now writes these artifacts into the output directory:
+
+- `codex.stdout.log`
+- `codex.stderr.log`
+- `result.txt`
+
+Their absolute paths are returned in the tool result as `stdout_path`, `stderr_path`, and `result_path`.
+
+### Temp workdir cleanup
+
+When `output_dir` is omitted, the plugin still creates a fresh temp directory, but it now also cleans up stale temp workdirs on a throttled interval so old generations do not accumulate forever.
+
+---
+
+## Testing
+
+Run the test suite with:
+
+```bash
+pytest tests/test_plugin.py -q
+```
+
+---
+
 ## Repository layout
 
-This repository intentionally keeps only the minimal distribution files:
+This repository intentionally keeps only the minimal distribution files plus tests:
 
 ```text
 assets/
   install-demo.gif
   install-screenshot.png
+tests/
+  test_plugin.py
 plugin.yaml
 __init__.py
 README.md
