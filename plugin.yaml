@@ -1,0 +1,6 @@
+name: codex_image_gen
+version: 0.1.0
+description: "Generate images via Codex CLI and return local file paths for Telegram/media workflows."
+author: Hermes Agent
+provides_tools:
+  - codex_image_generate
