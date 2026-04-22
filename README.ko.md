@@ -2,9 +2,14 @@
 
 [English](README.md)
 
+[![Release](https://img.shields.io/github/v/release/Jinbro98/hermes-gpt-image-gen?display_name=tag)](https://github.com/Jinbro98/hermes-gpt-image-gen/releases)
+[![License](https://img.shields.io/github/license/Jinbro98/hermes-gpt-image-gen)](LICENSE)
+[![Hermes Agent](https://img.shields.io/badge/Hermes-Agent-7C3AED)](https://github.com/Jinbro98/hermes-gpt-image-gen)
+[![Codex CLI](https://img.shields.io/badge/Codex%20CLI-imagegen-10A37F)](https://developers.openai.com/codex/cli/features/)
+
 **Hermes Agent**용 Codex CLI 기반 이미지 생성 플러그인입니다.
 
-이 플러그인은 Hermes에 `codex_image_generate` 도구를 추가합니다. 내부적으로 Codex CLI의 `$imagegen`을 실행하고, 결과 이미지를 **로컬 파일**로 저장한 뒤 절대 경로를 반환하므로 Telegram에서 `MEDIA:/absolute/path` 형식으로 바로 전송할 수 있습니다.
+이 플러그인은 Hermes에 `codex_image_generate` 도구를 추가합니다. 내부적으로 Codex CLI의 `$imagegen`을 실행하고, 결과 이미지를 **로컬 파일**로 저장한 뒤 절대 경로를 반환하므로 CLI/로컬 워크플로우에서 재사용하거나 Telegram에서 `MEDIA:/absolute/path` 형식으로 바로 전송할 수 있습니다.
 
 또한 아래와 같은 명시적 요청이 들어오면 Codex 기반 이미지 생성 흐름을 우선 사용하도록 라우팅 힌트를 추가합니다.
 
@@ -14,11 +19,23 @@
 
 ---
 
+## 미리보기
+
+### 설치 데모 GIF
+
+![Install demo](assets/install-demo.gif)
+
+### 설치 스크린샷
+
+![Install screenshot](assets/install-screenshot.png)
+
+---
+
 ## 주요 기능
 
 - Hermes에 `codex_image_generate` 도구 추가
 - 호스팅 이미지 URL 백엔드 대신 **Codex CLI**로 이미지 생성
-- Telegram/미디어 전송에 적합한 로컬 파일 경로 반환
+- Telegram, CLI, 기타 Hermes 워크플로우에 활용 가능한 로컬 파일 경로 반환
 - `landscape`, `square`, `portrait` 비율 지원
 - `auto`, `transparent`, `opaque` 배경 옵션 지원
 - 선택 사항: Hermes 기본 `image_generate`를 Codex 기반 구현으로 교체 가능
@@ -144,6 +161,9 @@ export HERMES_CODEX_IMAGEGEN_OVERRIDE=1
 이 저장소는 배포에 필요한 최소 파일만 포함합니다.
 
 ```text
+assets/
+  install-demo.gif
+  install-screenshot.png
 plugin.yaml
 __init__.py
 README.md

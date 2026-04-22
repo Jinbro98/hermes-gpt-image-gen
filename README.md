@@ -2,9 +2,14 @@
 
 [한국어](README.ko.md)
 
+[![Release](https://img.shields.io/github/v/release/Jinbro98/hermes-gpt-image-gen?display_name=tag)](https://github.com/Jinbro98/hermes-gpt-image-gen/releases)
+[![License](https://img.shields.io/github/license/Jinbro98/hermes-gpt-image-gen)](LICENSE)
+[![Hermes Agent](https://img.shields.io/badge/Hermes-Agent-7C3AED)](https://github.com/Jinbro98/hermes-gpt-image-gen)
+[![Codex CLI](https://img.shields.io/badge/Codex%20CLI-imagegen-10A37F)](https://developers.openai.com/codex/cli/features/)
+
 Codex CLI-powered image generation plugin for **Hermes Agent**.
 
-This plugin adds a new Hermes tool, `codex_image_generate`, which runs Codex CLI `$imagegen`, saves the output as a **local image file**, and returns the absolute path so Hermes can send it directly in Telegram with `MEDIA:/absolute/path`.
+This plugin adds a new Hermes tool, `codex_image_generate`, which runs Codex CLI `$imagegen`, saves the output as a **local image file**, and returns the absolute path so Hermes can reuse it in CLI/local workflows or send it directly in Telegram with `MEDIA:/absolute/path`.
 
 It also adds routing hints so explicit requests such as:
 
@@ -16,11 +21,23 @@ prefer the Codex-backed image workflow.
 
 ---
 
+## Preview
+
+### Install demo
+
+![Install demo](assets/install-demo.gif)
+
+### Install screenshot
+
+![Install screenshot](assets/install-screenshot.png)
+
+---
+
 ## Features
 
 - Adds `codex_image_generate` tool to Hermes
 - Uses **Codex CLI** image generation instead of a hosted image URL backend
-- Returns local file paths for Telegram/media workflows
+- Returns local file paths for Telegram, CLI, and other Hermes workflows
 - Supports `landscape`, `square`, `portrait`
 - Supports `auto`, `transparent`, `opaque` background preference
 - Optional override mode: replace built-in Hermes `image_generate` with the Codex-backed implementation
@@ -146,6 +163,9 @@ With that environment variable enabled, the plugin deregisters the existing `ima
 This repository intentionally keeps only the minimal distribution files:
 
 ```text
+assets/
+  install-demo.gif
+  install-screenshot.png
 plugin.yaml
 __init__.py
 README.md
